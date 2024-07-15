@@ -28,6 +28,10 @@ const admin = require("firebase-admin");
  */
 async function createScore(playerID, score, firestore) {
   // Implement me
+  return firestore.collection("scores").doc().create({
+    user : playerID,
+    score : score
+  });
 }
 
 /**
@@ -39,7 +43,29 @@ async function createScore(playerID, score, firestore) {
  *     player's rank and score.
  */
 async function readRank(playerID, firestore) {
-  // Implement me
+  const scores = firestore.collection("scores");
+  const playerSnapshot = await scores
+      .where("user", "==", playerID).get();
+  if (playerSnapshot.size === 0) {
+    throw Error(`User not found in leaderboard: ${playerID}`);
+  }
+
+  const player = playerSnapshot.docs[0];
+  if (player.get("rank") === undefined) {
+    // This score was added before our scheduled function could run,
+    // but this shouldn't be treated as an error
+    return {
+    user: playerID,
+    rank: null,
+    score: player.get("score"),
+  };
+  }
+
+  return {
+    user: playerID,
+    rank: player.get("rank"),
+    score: player.get("score"),
+  };
 }
 
 /**
@@ -53,6 +79,37 @@ async function readRank(playerID, firestore) {
  */
 async function updateScore(playerID, newScore, firestore) {
   // Implement me
+  const playerShanpshot = await firestore.collection("scores").where("user", "==", playerID).get();
+  if (playerSnapshot.size !== 1) {
+    throw Error(`User not found in leaderboard: ${playerID}`);
+  }
+  const player = playerSnapshot.docs[0];
+  const doc = firestore.doc(player.id);
+  return doc.update({
+    score: newScore,
+  });
 }
 
-module.exports = {createScore, readRank, updateScore};
+/**
+ * Updates the ranks of all players in the leaderboard based on their scores.
+ * @param {admin.firestore.Firestore} firestore The database storing the leaderboard.
+ * @return {Promise<void>} Returns a promise that resolves when the ranks are updated.
+ */
+async function updateRanks(firestore) {
+  const scoresRef = firestore.collection("scores");
+  const scoresSnapshot = await scoresRef.orderBy("score", "desc").get();
+
+  let rank = 1;
+  const batch = firestore.batch();
+
+  scoresSnapshot.docs.forEach((doc) => {
+    const docRef = scoresRef.doc(doc.id);
+    batch.update(docRef, { rank: rank });
+    rank++;
+  });
+
+  await batch.commit();
+  console.log("Ranks updated successfully.");
+}
+
+module.exports = { createScore, readRank, updateScore, updateRanks };

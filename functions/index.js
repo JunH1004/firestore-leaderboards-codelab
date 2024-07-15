@@ -88,3 +88,10 @@ exports.getRank = functions.https.onRequest(async (req, res) => {
     });
   });
 });
+
+exports.scheduledRankUpdate = functions.pubsub.schedule("every 2 minutes").onRun(async (context) => {
+  const firestore = admin.firestore();
+  await helpers.updateRanks(firestore);
+});
+
+
