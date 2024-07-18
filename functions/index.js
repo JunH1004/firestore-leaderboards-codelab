@@ -159,7 +159,7 @@ exports.addDummyPlayers = functions.https.onRequest(async (req, res) => {
 
 //유저 개인별 - 운동 기록이 추가될 때 마다 풀업 점수 업데이트 (디바운싱 적용
 //풀업 티어 처리 - 다른 폴더로 빼서 처리
-// Firestore trigger to update user score on workout log creation
+//workoug log 추가될때마다 트리거
 exports.onWorkoutLogCreate = functions.firestore
   .document('users/{userID}/workout_logs_datetime_id/{logDateTime}')
   .onCreate(async (snapshot, context) => {
@@ -167,19 +167,62 @@ exports.onWorkoutLogCreate = functions.firestore
     const workoutData = snapshot.data();
     const userRef = firestore.collection('users').doc(userID);
 
+    //풀업, 푸시업인 경우 따로 처리함
+    //새롭게 추가된 운동 종류에 따라서 문서 읽기 조건아 바뀜
+
+
+    //새롭게 추가된 운동 종류 type 확인
+    let workoutType = workoutData.workoutType;
+    if (workoutType !== 'pullup') {
+      //풀업이 아니라면 종료
+      return null;
+    }
+    
     const workoutLogsSnapshot = await userRef.collection('workout_logs_datetime_id')
       .orderBy('date', 'desc')
+      .where('workoutType', '==', workoutType)
       .limit(10)
       .get();
+    
+    if(workoutLogsSnapshot.empty) {
+      return null;
+    }
+    
+    //workoutLogsSnapshot의 날짜와 같은 풀업 디테일을 가져옴
+    //in 연산자는 10개 이하에서만 작동!!
+    const pullupDetailsSnapshot = await userRef.collection('pullup_details_datetime_id')
+      .where(FieldPath.documentId(), 'in', workoutLogsSnapshot.docs.map(doc => doc.id))
+      .get();
+    
 
     let totalScore = 0;
+    let totalCount = 0;
+
     workoutLogsSnapshot.forEach(doc => {
-      totalScore += doc.data().score;
+      // dateTime이 같은 pullupDetails 찾기
+      const pullupDetails = pullupDetailsSnapshot.docs.find(pullupDoc => pullupDoc.id === doc.id);
+      if (pullupDetails) {
+        let upTime = pullupDetails.data().upTime;
+        let downTime = pullupDetails.data().downTime;
+        if (upTime + downTime !== 0) {
+          let negativeRatio = downTime / (upTime + downTime);
+          let singleScore = helpers.computePullupTierScore(
+            JSON.parse(doc.data().doneReps),
+            JSON.parse(pullupDetails.data().tempo),
+            negativeRatio
+          );
+          totalScore += singleScore;
+          totalCount += 1;
+        }
+      }
     });
+    
+    let resultScore = 0;
+    if (totalCount === 0) {
+      resultScore = totalScore / totalCount;
+    }
 
-    const averageScore = totalScore / workoutLogsSnapshot.size;
-
-    await userRef.update({ workoutScore: averageScore });
+    await userRef.update({ pullupTierScore: resultScore });
   });
 
 //8시간마다 국가별 유저의 풀업 점수 합 랭킹 업데이트 로직

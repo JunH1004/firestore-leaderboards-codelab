@@ -20,7 +20,7 @@ const pullup_tier_logic_version = 1; //20240717
  * @param {Array<number>} tempo Array of integers representing tempo for each workout.
  * @return {number} The computed tier score.
  */
-function computeTierScore(sets, negativeRatio, tempo) {
+function computePullupTierScore(sets, negativeRatio, tempo) {
   const adjustedNegativeRatio = Math.max(0.4, Math.min(0.7, negativeRatio));
 
   let result = 0;
@@ -74,4 +74,4 @@ function getTempoStandardDeviation(tempo) {
   return Math.sqrt(variance) * 0.1;
 }
 
-module.exports = { computeTierScore };
+module.exports = { computePullupTierScore };
