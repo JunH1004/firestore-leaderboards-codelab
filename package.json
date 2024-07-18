@@ -2,5 +2,18 @@
   "dependencies": {
     "cors": "^2.8.5",
     "firebase": "^9.14.0"
+  },
+  "name": "firestore-leaderboards-codelab",
+  "version": "1.0.0",
+  "description": "This is the source code that accompanies the Firestore Leaderboards Codelab.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "firebase-tools": "^13.13.2"
   }
 }

@@ -24,74 +24,163 @@ const cors = require("cors")({
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const helpers = require("./functions-helpers.js");
 const utils = require("./utils.js");
+const helpers = require("./helpers.js");
 admin.initializeApp();
 
-// Adds 10 random scores.
-exports.addScores = functions.https.onRequest(async (req, res) => {
+const firestore = admin.firestore();
+
+//함수 시작
+
+/**
+ * Generates random workout log data.
+ * @return {Object} The workout log data.
+ */
+function generateRandomWorkoutLog() {
+  const date = new Date();
+  date.setSeconds(date.getSeconds() + Math.floor(Math.random() * 100000)); // Random date in the future
+  const workoutTypes = ["routine", "test", "free", "custom"];
+  const randomType = workoutTypes[Math.floor(Math.random() * workoutTypes.length)];
+
+  let goalReps = null;
+  let doneReps = null;
+
+  if (randomType === "routine") {
+    goalReps = Array.from({ length: 5 }, (_, i) => 5 - i);
+    doneReps = [...goalReps];
+  } else if (randomType === "test") {
+    doneReps = [Math.floor(Math.random() * 15) + 1]; // One set with random reps
+  } else if (randomType === "free") {
+    const sets = Math.floor(Math.random() * 10) + 1; // Random number of sets
+    doneReps = Array.from({ length: sets }, () => Math.floor(Math.random() * 10) + 1);
+  } else if (randomType === "custom") {
+    const sets = Math.floor(Math.random() * 7) + 3; // Random number of sets between 3 and 10
+    goalReps = Array.from({ length: sets }, () => Math.floor(Math.random() * 5) + 1);
+    doneReps = [...goalReps];
+  }
+
+  const randomTotalTime = Math.floor(Math.random() * 120); // Random total time between 0 and 120 minutes
+
+  return {
+    workoutType: "pullup",
+    workoutSubType: randomType,
+    date: date.toISOString(),
+    goalReps: goalReps ? JSON.stringify(goalReps) : null,
+    doneReps: JSON.stringify(doneReps),
+    totalTime: randomTotalTime,
+  };
+}
+
+/**
+ * Generates random pullup details data.
+ * @param {number} length The length of the tempo array.
+ * @return {Object} The pullup details data.
+ */
+function generateRandomPullupDetails(length) {
+  const randomUpTime = Math.floor(Math.random() * 20 * length + 1); // Random up time
+  const randomDownTime = Math.floor(Math.random() * 20 * length + 1); // Random down time
+  const randomTempo = Array.from({ length: length }, () => Math.floor(Math.random() * 21) + 35); // Random tempo between 35 and 55
+
+  return {
+    upTime: randomUpTime,
+    downTime: randomDownTime,
+    tempo: JSON.stringify(randomTempo),
+  };
+}
+
+/**
+ * Adds 20 random workout logs and pullup details for a user.
+ * @param {string} userID The ID of the user.
+ * @param {number} size The number of workout logs to add.
+ * @return {Promise<void>} Returns a promise that resolves when the data is added.
+ */
+async function createDummyWorkoutLogs(userID, size) {
+  const batch = firestore.batch();
+  const workoutLogsCollection = `users/${userID}/workout_logs_datetime_id`;
+  const pullupDetailsCollection = `users/${userID}/pullup_details_datetime_id`;
+
+  for (let i = 0; i < size; i++) {
+    const workoutLog = generateRandomWorkoutLog();
+    const pullupDetails = generateRandomPullupDetails(JSON.parse(workoutLog.doneReps).length);
+
+    const workoutLogRef = firestore.collection(workoutLogsCollection).doc(workoutLog.date);
+    const pullupDetailsRef = firestore.collection(pullupDetailsCollection).doc(workoutLog.date);
+
+    batch.set(workoutLogRef, workoutLog);
+    batch.set(pullupDetailsRef, pullupDetails);
+  }
+
+  return await batch.commit();
+  //console.log("Dummy workout logs and pullup details added successfully.");
+}
+
+
+exports.addDummyWorkoutLogs = functions.https.onRequest(async (req, res) => {
   cors(req, res, () => {
-    const scores = [];
-    for (let i = 0; i < 10; i++) {
-      scores.push({
-        user: utils.newUserID(),
-        score: utils.randomScore(),
-      });
+    const userID = req.body.data.playerID;
+    createDummyWorkoutLogs(userID, 10).then((result) => {
+      res.json({result: `Dummies created: ${result}`});
+    });
+  });
+});
+
+exports.addDummyWorkoutLog = functions.https.onRequest(async (req, res) => {
+  cors(req, res, () => {
+    const userID = req.body.data.playerID;
+    createDummyWorkoutLogs(userID, 1).then((result) => {
+      res.json({result: `Dummy created: ${result}`});
+    });
+  });
+});
+
+
+//n명의 유저를 생성함과 동시에 운동 기록도 추가
+exports.addDummyPlayers = functions.https.onRequest(async (req, res) => {
+  cors(req, res, async () => {
+    const startIndex = req.body.data.startIndex;
+    const length = req.body.data.length;
+
+    try {
+      const promises = [];
+      for (let i = startIndex; i < startIndex + length; i++) {
+        promises.push(createDummyWorkoutLogs(i.toString(), 10));
+      }
+      
+      const results = await Promise.all(promises);
+      res.json({ result: `Dummies created: ${results.length}` });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-    // This is done synchronously to avoid lock contention when using
-    // transactions.
-    Promise.all(
-        scores.map(async (score) => {
-          await helpers.createScore(
-              score.user,
-              score.score,
-              admin.firestore(),
-          );
-        }),
-    ).then((results) => {
-      res.json({
-        result: "Added scores",
-        writes: results,
-      });
-      res.end();
-    });
   });
 });
 
-exports.addScore = functions.https.onRequest(async (req, res) => {
-  cors(req, res, () => {
-    const user = req.body.data.playerID;
-    const score = req.body.data.score;
-    helpers.createScore(user, score, admin.firestore()).then((result) => {
-      res.json({result: `Score created: ${result}`});
+//더미 세팅 함수 끝
+//실제 중요 함수 구현 시작
+
+//유저 개인별 - 운동 기록이 추가될 때 마다 풀업 점수 업데이트 (디바운싱 적용
+//풀업 티어 처리 - 다른 폴더로 빼서 처리
+// Firestore trigger to update user score on workout log creation
+exports.onWorkoutLogCreate = functions.firestore
+  .document('users/{userID}/workout_logs_datetime_id/{logDateTime}')
+  .onCreate(async (snapshot, context) => {
+    const userID = context.params.userID;
+    const workoutData = snapshot.data();
+    const userRef = firestore.collection('users').doc(userID);
+
+    const workoutLogsSnapshot = await userRef.collection('workout_logs_datetime_id')
+      .orderBy('date', 'desc')
+      .limit(10)
+      .get();
+
+    let totalScore = 0;
+    workoutLogsSnapshot.forEach(doc => {
+      totalScore += doc.data().score;
     });
+
+    const averageScore = totalScore / workoutLogsSnapshot.size;
+
+    await userRef.update({ workoutScore: averageScore });
   });
-});
 
-exports.updateScore = functions.https.onRequest(async (req, res) => {
-  cors(req, res, () => {
-    const user = req.body.data.playerID;
-    const score = req.body.data.newScore;
-    const firestore = admin.firestore();
-    helpers.updateScore(user, score, firestore).then((result) => {
-      res.json({result: `Update completed with result: ${result}`});
-    });
-  });
-});
-
-exports.getRank = functions.https.onRequest(async (req, res) => {
-  cors(req, res, () => {
-    const user = req.body.data.playerID;
-    const firestore = admin.firestore();
-    helpers.readRank(user, firestore).then((result) => {
-      res.json({result: `Rank: ${result.rank}`});
-    });
-  });
-});
-
-exports.scheduledRankUpdate = functions.pubsub.schedule("every 2 minutes").onRun(async (context) => {
-  const firestore = admin.firestore();
-  await helpers.updateRanks(firestore);
-});
-
-
+//8시간마다 국가별 유저의 풀업 점수 합 랭킹 업데이트 로직
+//

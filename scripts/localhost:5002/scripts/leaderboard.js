@@ -28,7 +28,14 @@ async function invokeFunctionCall(name) {
   });
 }
 
-
+export async function addDummyPlayers(startIndex, length) {
+  const functions = getFunctions();
+  const callable = httpsCallable(functions, "addDummyPlayers");
+  callable({startIndex: startIndex, length: length})
+    .then((result) => {
+    console.log(result);
+  });
+}
 
 export async function addDummyWorkoutLog(userID) {
   const functions = getFunctions();
