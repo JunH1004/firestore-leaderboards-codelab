@@ -26,6 +26,7 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const utils = require("./utils.js");
 const helpers = require("./helpers.js");
+const { FieldPath } = require('firebase-admin/firestore');
 admin.initializeApp();
 
 const firestore = admin.firestore();
@@ -222,7 +223,7 @@ exports.onWorkoutLogCreate = functions.firestore
       resultScore = totalScore / totalCount;
     }
 
-    await userRef.update({ pullupTierScore: resultScore });
+    await userRef.set({ pullupTierScore: resultScore }, { merge: true });
   });
 
 //8시간마다 국가별 유저의 풀업 점수 합 랭킹 업데이트 로직

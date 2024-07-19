@@ -59,7 +59,10 @@ function computePullupTierScore(sets, negativeRatio, tempo) {
  * @return {number} The mean of the array.
  */
 function getTempoMean(tempo) {
-  const sum = tempo.reduce((acc, val) => acc + val, 0);
+  let sum = 0;
+  for (let i = 0; i < tempo.length; i++) {
+    sum += tempo[i];
+  }
   return sum / tempo.length;
 }
 
@@ -70,7 +73,11 @@ function getTempoMean(tempo) {
  */
 function getTempoStandardDeviation(tempo) {
   const mean = getTempoMean(tempo);
-  const variance = tempo.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / tempo.length;
+  let varianceSum = 0;
+  for (let i = 0; i < tempo.length; i++) {
+    varianceSum += Math.pow(tempo[i] - mean, 2);
+  }
+  const variance = varianceSum / tempo.length;
   return Math.sqrt(variance) * 0.1;
 }
 
