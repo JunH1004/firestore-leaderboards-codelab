@@ -219,7 +219,7 @@ exports.onWorkoutLogCreate = functions.firestore
     });
     
     let resultScore = 0;
-    if (totalCount === 0) {
+    if (totalCount != 0) {
       resultScore = totalScore / totalCount;
     }
 
