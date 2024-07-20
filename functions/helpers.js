@@ -36,12 +36,14 @@ function computePullupTierScore(sets, negativeRatio, tempo) {
 
   let correctPacePoint = 0;
   const tempoMean = getTempoMean(tempo);
+  //console.log("tempoMean : ", tempoMean);
   if (tempoMean >= 36 && tempoMean <= 44) {
     correctPacePoint = result * 0.2;
   }
 
   let consistentPacePoint = 0;
   const tempoStandardDeviation = getTempoStandardDeviation(tempo);
+  //console.log("tempoStandardDeviation : ", tempoStandardDeviation);
   consistentPacePoint = Math.max(result * (0.2 - tempoStandardDeviation * 0.2), 0);
 
   let negativeRatioPoint = result * ((adjustedNegativeRatio - 0.4) * (2 / 3));
@@ -49,7 +51,8 @@ function computePullupTierScore(sets, negativeRatio, tempo) {
   consistentPacePoint *= 1.5;
   consistentPacePoint *= 0.5;
   result += correctPacePoint + consistentPacePoint + negativeRatioPoint;
-
+  
+  //console.log("h result : ", result);
   return Math.round(result);
 }
 

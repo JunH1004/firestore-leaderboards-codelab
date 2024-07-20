@@ -166,7 +166,6 @@ exports.onWorkoutLogCreate = functions.firestore
   .onCreate(async (snapshot, context) => {
     const userID = context.params.userID;
     const workoutData = snapshot.data();
-    const userRef = firestore.collection('users').doc(userID);
 
     //풀업, 푸시업인 경우 따로 처리함
     //새롭게 추가된 운동 종류에 따라서 문서 읽기 조건아 바뀜
@@ -178,6 +177,8 @@ exports.onWorkoutLogCreate = functions.firestore
       //풀업이 아니라면 종료
       return null;
     }
+
+    const userRef = firestore.collection('users').doc(userID);
     
     const workoutLogsSnapshot = await userRef.collection('workout_logs_datetime_id')
       .orderBy('date', 'desc')
@@ -191,9 +192,9 @@ exports.onWorkoutLogCreate = functions.firestore
     
     //workoutLogsSnapshot의 날짜와 같은 풀업 디테일을 가져옴
     //in 연산자는 10개 이하에서만 작동!!
-    const pullupDetailsSnapshot = await userRef.collection('pullup_details_datetime_id')
-      .where(FieldPath.documentId(), 'in', workoutLogsSnapshot.docs.map(doc => doc.id))
-      .get();
+    // const pullupDetailsSnapshot = await userRef.collection('pullup_details_datetime_id')
+    //   .where(FieldPath.documentId(), 'in', workoutLogsSnapshot.docs.map(doc => doc.id))
+    //   .get();
     
 
     let totalScore = 0;
@@ -201,27 +202,39 @@ exports.onWorkoutLogCreate = functions.firestore
 
     workoutLogsSnapshot.forEach(doc => {
       // dateTime이 같은 pullupDetails 찾기
-      const pullupDetails = pullupDetailsSnapshot.docs.find(pullupDoc => pullupDoc.id === doc.id);
-      if (pullupDetails) {
+      //const pullupDetails = pullupDetailsSnapshot.docs.find(pullupDoc => pullupDoc.id === doc.id);
+      if (1 != 1) {
+        //console.log('WorkoutLog ID: ', doc.id);
+        //console.log('pullupDetails ID: ', pullupDetails.id);
+
+        
         let upTime = pullupDetails.data().upTime;
         let downTime = pullupDetails.data().downTime;
+        //console.log('done reps: ', JSON.parse(doc.data().doneReps));
+        //console.log('tempo: ', JSON.parse(pullupDetails.data().tempo));
+        
         if (upTime + downTime !== 0) {
           let negativeRatio = downTime / (upTime + downTime);
+          //console.log('negativeRatio: ', negativeRatio);
           let singleScore = helpers.computePullupTierScore(
             JSON.parse(doc.data().doneReps),
-            JSON.parse(pullupDetails.data().tempo),
-            negativeRatio
+            negativeRatio,
+            JSON.parse(pullupDetails.data().tempo)
+            
           );
+          console.log('singleScore: ', singleScore);
           totalScore += singleScore;
           totalCount += 1;
         }
       }
     });
     
-    let resultScore = 0;
+    let resultScore = -1;
     if (totalCount != 0) {
       resultScore = totalScore / totalCount;
     }
+    console.log('totalScore: ', totalScore);
+    console.log('totalCount: ', totalCount);
 
     await userRef.set({ pullupTierScore: resultScore }, { merge: true });
   });
