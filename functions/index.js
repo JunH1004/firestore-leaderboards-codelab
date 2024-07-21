@@ -38,29 +38,41 @@ const firestore = admin.firestore();
  * @return {Object} The workout log data.
  */
 function generateRandomWorkoutLog() {
+  // Generates a random date in the future
   const date = new Date();
-  date.setSeconds(date.getSeconds() + Math.floor(Math.random() * 100000)); // Random date in the future
+  date.setSeconds(date.getSeconds() + Math.floor(Math.random() * 100000));
+
+  // Randomly selects a workout sub-type
   const workoutTypes = ["routine", "test", "free", "custom"];
   const randomType = workoutTypes[Math.floor(Math.random() * workoutTypes.length)];
 
   let goalReps = null;
   let doneReps = null;
+  let sets = 0;
 
+  // Generates goalReps and doneReps based on the workout sub-type
   if (randomType === "routine") {
     goalReps = Array.from({ length: 5 }, (_, i) => 5 - i);
     doneReps = [...goalReps];
   } else if (randomType === "test") {
     doneReps = [Math.floor(Math.random() * 15) + 1]; // One set with random reps
   } else if (randomType === "free") {
-    const sets = Math.floor(Math.random() * 10) + 1; // Random number of sets
+    sets = Math.floor(Math.random() * 10) + 1; // Random number of sets
     doneReps = Array.from({ length: sets }, () => Math.floor(Math.random() * 10) + 1);
   } else if (randomType === "custom") {
-    const sets = Math.floor(Math.random() * 7) + 3; // Random number of sets between 3 and 10
+    sets = Math.floor(Math.random() * 7) + 3; // Random number of sets between 3 and 10
     goalReps = Array.from({ length: sets }, () => Math.floor(Math.random() * 5) + 1);
     doneReps = [...goalReps];
   }
 
-  const randomTotalTime = Math.floor(Math.random() * 120); // Random total time between 0 and 120 minutes
+  // Random total time between 0 and 120 minutes
+  const randomTotalTime = Math.floor(Math.random() * 120);
+
+  // Generates random pullup details
+  const length = randomType === "test" ? 1 : (goalReps ? goalReps.length : doneReps.length);
+  const randomUpTime = Math.floor(Math.random() * 20 * length + 1); // Random up time
+  const randomDownTime = Math.floor(Math.random() * 20 * length + 1); // Random down time
+  const randomTempo = Array.from({ length: length }, () => Math.floor(Math.random() * 21) + 35); // Random tempo between 35 and 55
 
   return {
     workoutType: "pullup",
@@ -69,51 +81,44 @@ function generateRandomWorkoutLog() {
     goalReps: goalReps ? JSON.stringify(goalReps) : null,
     doneReps: JSON.stringify(doneReps),
     totalTime: randomTotalTime,
+    pullupDetails: {
+      upTime: randomUpTime,
+      downTime: randomDownTime,
+      tempo: JSON.stringify(randomTempo),
+    }
   };
 }
 
-/**
- * Generates random pullup details data.
- * @param {number} length The length of the tempo array.
- * @return {Object} The pullup details data.
- */
-function generateRandomPullupDetails(length) {
-  const randomUpTime = Math.floor(Math.random() * 20 * length + 1); // Random up time
-  const randomDownTime = Math.floor(Math.random() * 20 * length + 1); // Random down time
-  const randomTempo = Array.from({ length: length }, () => Math.floor(Math.random() * 21) + 35); // Random tempo between 35 and 55
 
-  return {
-    upTime: randomUpTime,
-    downTime: randomDownTime,
-    tempo: JSON.stringify(randomTempo),
-  };
-}
+
 
 /**
- * Adds 20 random workout logs and pullup details for a user.
  * @param {string} userID The ID of the user.
  * @param {number} size The number of workout logs to add.
  * @return {Promise<void>} Returns a promise that resolves when the data is added.
  */
 async function createDummyWorkoutLogs(userID, size) {
-  const batch = firestore.batch();
-  const workoutLogsCollection = `users/${userID}/workout_logs_datetime_id`;
-  const pullupDetailsCollection = `users/${userID}/pullup_details_datetime_id`;
+  const stringId = `${userID}`;
+  const userRef = firestore.collection('users').doc(stringId);
 
+  const userDoc = await userRef.get();
+
+  // 기존 운동 기록을 가져오거나 초기화
+  let workoutLogs = userDoc.exists && userDoc.data().workoutLogs ? userDoc.data().workoutLogs : [];
+
+  // 새로운 운동 기록 생성
   for (let i = 0; i < size; i++) {
     const workoutLog = generateRandomWorkoutLog();
-    const pullupDetails = generateRandomPullupDetails(JSON.parse(workoutLog.doneReps).length);
-
-    const workoutLogRef = firestore.collection(workoutLogsCollection).doc(workoutLog.date);
-    const pullupDetailsRef = firestore.collection(pullupDetailsCollection).doc(workoutLog.date);
-
-    batch.set(workoutLogRef, workoutLog);
-    batch.set(pullupDetailsRef, pullupDetails);
+    workoutLogs.push(workoutLog);
   }
-
-  return await batch.commit();
-  //console.log("Dummy workout logs and pullup details added successfully.");
+  console.log(workoutLogs);
+  
+  // Firestore 업데이트
+  return await userRef.set({ workoutLogs: workoutLogs }, { merge: true });
 }
+
+
+
 
 
 exports.addDummyWorkoutLogs = functions.https.onRequest(async (req, res) => {
@@ -136,108 +141,82 @@ exports.addDummyWorkoutLog = functions.https.onRequest(async (req, res) => {
 
 
 //n명의 유저를 생성함과 동시에 운동 기록도 추가
-exports.addDummyPlayers = functions.https.onRequest(async (req, res) => {
-  cors(req, res, async () => {
-    const startIndex = req.body.data.startIndex;
-    const length = req.body.data.length;
+// exports.addDummyPlayers = functions.https.onRequest(async (req, res) => {
+//   cors(req, res, async () => {
+//     const startIndex = req.body.data.startIndex;
+//     const length = req.body.data.length;
 
-    try {
-      const promises = [];
-      for (let i = startIndex; i < startIndex + length; i++) {
-        promises.push(createDummyWorkoutLogs(i.toString(), 10));
-      }
+//     try {
+//       const promises = [];
+//       for (let i = startIndex; i < startIndex + length; i++) {
+//         promises.push(createDummyWorkoutLogs(i.toString(), 10));
+//       }
       
-      const results = await Promise.all(promises);
-      res.json({ result: `Dummies created: ${results.length}` });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-});
+//       const results = await Promise.all(promises);
+//       res.json({ result: `Dummies created: ${results.length}` });
+//     } catch (error) {
+//       res.status(500).json({ error: error.message });
+//     }
+//   });
+// });
 
-//더미 세팅 함수 끝
-//실제 중요 함수 구현 시작
+// //더미 세팅 함수 끝
+// //실제 중요 함수 구현 시작
 
-//유저 개인별 - 운동 기록이 추가될 때 마다 풀업 점수 업데이트 (디바운싱 적용
-//풀업 티어 처리 - 다른 폴더로 빼서 처리
-//workoug log 추가될때마다 트리거
-exports.onWorkoutLogCreate = functions.firestore
-  .document('users/{userID}/workout_logs_datetime_id/{logDateTime}')
-  .onCreate(async (snapshot, context) => {
-    const userID = context.params.userID;
-    const workoutData = snapshot.data();
+// //유저 개인별 - 운동 기록이 추가될 때 마다 풀업 점수 업데이트 (디바운싱 적용
+// //풀업 티어 처리 - 다른 폴더로 빼서 처리
+// //workoug log 추가될때마다 트리거
+// exports.onWorkoutLogCreate = functions.firestore
+//   .document('users/{userID}/workout_logs_datetime_id/{logDateTime}')
+//   .onCreate(async (snapshot, context) => {
+//     const userID = context.params.userID;
+//     const workoutData = snapshot.data();
 
-    //풀업, 푸시업인 경우 따로 처리함
-    //새롭게 추가된 운동 종류에 따라서 문서 읽기 조건아 바뀜
+//     // 새롭게 추가된 운동 종류 type 확인
+//     let workoutType = workoutData.workoutType;
+//     if (workoutType !== 'pullup') {
+//       // 풀업이 아니라면 종료
+//       return null;
+//     }
 
-
-    //새롭게 추가된 운동 종류 type 확인
-    let workoutType = workoutData.workoutType;
-    if (workoutType !== 'pullup') {
-      //풀업이 아니라면 종료
-      return null;
-    }
-
-    const userRef = firestore.collection('users').doc(userID);
+//     const userRef = firestore.collection('users').doc(userID);
     
-    const workoutLogsSnapshot = await userRef.collection('workout_logs_datetime_id')
-      .orderBy('date', 'desc')
-      .where('workoutType', '==', workoutType)
-      .limit(10)
-      .get();
+//     const workoutLogsSnapshot = await userRef.collection('workout_logs_datetime_id').get();
+//     //읽기 수 : 운동 기록 개수
+//     return null;
     
-    if(workoutLogsSnapshot.empty) {
-      return null;
-    }
+//     if (workoutLogsSnapshot.empty) {
+//       return null;
+//     }
     
-    //workoutLogsSnapshot의 날짜와 같은 풀업 디테일을 가져옴
-    //in 연산자는 10개 이하에서만 작동!!
-    // const pullupDetailsSnapshot = await userRef.collection('pullup_details_datetime_id')
-    //   .where(FieldPath.documentId(), 'in', workoutLogsSnapshot.docs.map(doc => doc.id))
-    //   .get();
+//     let totalScore = 0;
+//     let totalCount = 0;
+
+//     workoutLogsSnapshot.forEach(doc => {
+//       const data = doc.data();
+//       let upTime = data.pullupDetails.upTime;
+//       let downTime = data.pullupDetails.downTime;
+
+//       if (upTime + downTime !== 0) {
+//         let negativeRatio = downTime / (upTime + downTime);
+//         let singleScore = helpers.computePullupTierScore(
+//           JSON.parse(data.doneReps),
+//           negativeRatio,
+//           JSON.parse(data.pullupDetails.tempo)
+//         );
+//         totalScore += singleScore;
+//         totalCount += 1;
+//       }
+//     });
     
+//     let resultScore = -1;
+//     if (totalCount !== 0) {
+//       resultScore = totalScore / totalCount;
+//     }
 
-    let totalScore = 0;
-    let totalCount = 0;
+//     await userRef.set({ pullupTierScore: resultScore }, { merge: true });
+//   });
 
-    workoutLogsSnapshot.forEach(doc => {
-      // dateTime이 같은 pullupDetails 찾기
-      //const pullupDetails = pullupDetailsSnapshot.docs.find(pullupDoc => pullupDoc.id === doc.id);
-      if (1 != 1) {
-        //console.log('WorkoutLog ID: ', doc.id);
-        //console.log('pullupDetails ID: ', pullupDetails.id);
-
-        
-        let upTime = pullupDetails.data().upTime;
-        let downTime = pullupDetails.data().downTime;
-        //console.log('done reps: ', JSON.parse(doc.data().doneReps));
-        //console.log('tempo: ', JSON.parse(pullupDetails.data().tempo));
-        
-        if (upTime + downTime !== 0) {
-          let negativeRatio = downTime / (upTime + downTime);
-          //console.log('negativeRatio: ', negativeRatio);
-          let singleScore = helpers.computePullupTierScore(
-            JSON.parse(doc.data().doneReps),
-            negativeRatio,
-            JSON.parse(pullupDetails.data().tempo)
-            
-          );
-          console.log('singleScore: ', singleScore);
-          totalScore += singleScore;
-          totalCount += 1;
-        }
-      }
-    });
-    
-    let resultScore = -1;
-    if (totalCount != 0) {
-      resultScore = totalScore / totalCount;
-    }
-    console.log('totalScore: ', totalScore);
-    console.log('totalCount: ', totalCount);
-
-    await userRef.set({ pullupTierScore: resultScore }, { merge: true });
-  });
 
 //8시간마다 국가별 유저의 풀업 점수 합 랭킹 업데이트 로직
 //
