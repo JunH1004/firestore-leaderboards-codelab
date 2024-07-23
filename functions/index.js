@@ -99,8 +99,9 @@ function generateRandomWorkoutLog() {
  */
 async function createDummyWorkoutLogs(userID, size) {
   const stringId = `${userID}`;
-  const userRef = firestore.collection('users').doc(stringId);
+  const userRef = firestore.collection('users').doc(stringId).collection('workout_logs_array').doc('0');
 
+  //읽기 1회
   const userDoc = await userRef.get();
 
   // 기존 운동 기록을 가져오거나 초기화
@@ -114,6 +115,7 @@ async function createDummyWorkoutLogs(userID, size) {
   console.log(workoutLogs);
   
   // Firestore 업데이트
+  // 쓰기 1회
   return await userRef.set({ workoutLogs: workoutLogs }, { merge: true });
 }
 
@@ -139,26 +141,46 @@ exports.addDummyWorkoutLog = functions.https.onRequest(async (req, res) => {
   });
 });
 
+const countries = [
+  "United States", "Canada", "United Kingdom", "Germany", "France","South Korea",
+];
+
+exports.onUserCreate = functions.firestore
+  .document('users/{userID}/workout_logs_array/0')
+  .onCreate(async (snap, context) => {
+    const userID = context.params.userID;
+    const randomCountry = countries[Math.floor(Math.random() * countries.length)];
+
+    // 유저 문서에 랜덤 국가 추가
+    await firestore.collection('users').doc(userID).set({
+      country: randomCountry
+    }, { merge: true });  // merge: true를 사용하여 기존 필드와 병합
+    console.log(`User ${userID} created with country ${randomCountry}`);
+
+    updatePullupScore(userID, snap.data());
+  });
+
+
 
 //n명의 유저를 생성함과 동시에 운동 기록도 추가
-// exports.addDummyPlayers = functions.https.onRequest(async (req, res) => {
-//   cors(req, res, async () => {
-//     const startIndex = req.body.data.startIndex;
-//     const length = req.body.data.length;
+exports.addDummyPlayers = functions.https.onRequest(async (req, res) => {
+  cors(req, res, async () => {
+    const startIndex = req.body.data.startIndex;
+    const length = req.body.data.length;
 
-//     try {
-//       const promises = [];
-//       for (let i = startIndex; i < startIndex + length; i++) {
-//         promises.push(createDummyWorkoutLogs(i.toString(), 10));
-//       }
+    try {
+      const promises = [];
+      for (let i = startIndex; i < startIndex + length; i++) {
+        promises.push(createDummyWorkoutLogs(i.toString(), 10));
+      }
       
-//       const results = await Promise.all(promises);
-//       res.json({ result: `Dummies created: ${results.length}` });
-//     } catch (error) {
-//       res.status(500).json({ error: error.message });
-//     }
-//   });
-// });
+      const results = await Promise.all(promises);
+      res.json({ result: `Dummies created: ${results.length}` });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+});
 
 // //더미 세팅 함수 끝
 // //실제 중요 함수 구현 시작
@@ -166,57 +188,87 @@ exports.addDummyWorkoutLog = functions.https.onRequest(async (req, res) => {
 // //유저 개인별 - 운동 기록이 추가될 때 마다 풀업 점수 업데이트 (디바운싱 적용
 // //풀업 티어 처리 - 다른 폴더로 빼서 처리
 // //workoug log 추가될때마다 트리거
-// exports.onWorkoutLogCreate = functions.firestore
-//   .document('users/{userID}/workout_logs_datetime_id/{logDateTime}')
-//   .onCreate(async (snapshot, context) => {
-//     const userID = context.params.userID;
-//     const workoutData = snapshot.data();
+exports.onWorkoutLogCreate = functions.firestore
+  .document('users/{userID}/workout_logs_array/0')
+  .onUpdate(async (change, context) => {
+    updatePullupScore(context.params.userID, change.after.data());
+  });
 
-//     // 새롭게 추가된 운동 종류 type 확인
-//     let workoutType = workoutData.workoutType;
-//     if (workoutType !== 'pullup') {
-//       // 풀업이 아니라면 종료
-//       return null;
-//     }
+async function updatePullupScore(userID, data) {
+    const newValue = data;  // 새롭게 업데이트된 데이터
 
-//     const userRef = firestore.collection('users').doc(userID);
+    // 운동 기록 배열을 가져오기
+    const workoutLogs = newValue.workoutLogs || [];
+    console.log(workoutLogs);
+    // `pullup` 운동 기록만 필터링
+    const pullupLogs = workoutLogs.filter(log => log.workoutType === 'pullup');
+    console.log(pullupLogs);
+    if (pullupLogs.length === 0) {
+      return null;
+    }
+
+    let totalScore = 0;
+    let totalCount = 0;
+
+    pullupLogs.forEach(log => {
+      let upTime = log.pullupDetails.upTime;
+      let downTime = log.pullupDetails.downTime;
+
+      if (upTime + downTime !== 0) {
+        let negativeRatio = downTime / (upTime + downTime);
+        let singleScore = helpers.computePullupTierScore(
+          JSON.parse(log.doneReps),
+          negativeRatio,
+          JSON.parse(log.pullupDetails.tempo)
+        );
+        totalScore += singleScore;
+        totalCount += 1;
+      }
+    });
     
-//     const workoutLogsSnapshot = await userRef.collection('workout_logs_datetime_id').get();
-//     //읽기 수 : 운동 기록 개수
-//     return null;
-    
-//     if (workoutLogsSnapshot.empty) {
-//       return null;
-//     }
-    
-//     let totalScore = 0;
-//     let totalCount = 0;
+    let resultScore = -1;
+    if (totalCount !== 0) {
+      resultScore = totalScore / totalCount;
+    }
 
-//     workoutLogsSnapshot.forEach(doc => {
-//       const data = doc.data();
-//       let upTime = data.pullupDetails.upTime;
-//       let downTime = data.pullupDetails.downTime;
-
-//       if (upTime + downTime !== 0) {
-//         let negativeRatio = downTime / (upTime + downTime);
-//         let singleScore = helpers.computePullupTierScore(
-//           JSON.parse(data.doneReps),
-//           negativeRatio,
-//           JSON.parse(data.pullupDetails.tempo)
-//         );
-//         totalScore += singleScore;
-//         totalCount += 1;
-//       }
-//     });
-    
-//     let resultScore = -1;
-//     if (totalCount !== 0) {
-//       resultScore = totalScore / totalCount;
-//     }
-
-//     await userRef.set({ pullupTierScore: resultScore }, { merge: true });
-//   });
+    await firestore.collection('users').doc(userID).set({ pullupTierScore: resultScore }, { merge: true });
+}
 
 
 //8시간마다 국가별 유저의 풀업 점수 합 랭킹 업데이트 로직
-//
+exports.updateCountryRankings = functions.pubsub.schedule('every 2 minutes').onRun(async (context) => {
+  const usersSnapshot = await firestore.collection('users').get();
+
+  // 국가별로 pullupTierScore를 합산
+  const countryScores = {};
+  usersSnapshot.forEach(doc => {
+    const userData = doc.data();
+    if (userData.country && userData.pullupTierScore !== undefined) {
+      if (!countryScores[userData.country]) {
+        countryScores[userData.country] = { totalScore: 0, userCount: 0 };
+      }
+      countryScores[userData.country].totalScore += userData.pullupTierScore;
+      countryScores[userData.country].userCount += 1;
+    }
+  });
+
+  // 각 국가별 랭킹 계산
+  const countryRankings = Object.entries(countryScores).map(([country, { totalScore, userCount }]) => {
+    return {
+      country: country,
+      totalScore: totalScore,
+      averageScore: totalScore / userCount,
+    };
+  });
+
+  // totalScore를 기준으로 내림차순 정렬
+  countryRankings.sort((a, b) => b.totalScore - a.totalScore);
+
+  // Firestore에 저장
+  const rankingsRef = firestore.collection('rankings').doc('country_rankings');
+  await rankingsRef.set({ rankings: countryRankings });
+
+  console.log('Country rankings updated:', countryRankings);
+  return null;
+});
+
